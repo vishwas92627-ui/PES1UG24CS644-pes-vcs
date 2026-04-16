@@ -13,7 +13,7 @@
 //
 // PROVIDED functions: commit_parse, commit_serialize, commit_walk, head_read, head_update
 // TODO functions:     commit_create
-
+#include <time.h>
 #include "commit.h"
 #include "index.h"
 #include "tree.h"
@@ -194,8 +194,54 @@ int head_update(const ObjectID *new_commit) {
 //
 // Returns 0 on success, -1 on error.
 int commit_create(const char *message, ObjectID *commit_id_out) {
-    // TODO: Implement commit creation
-    // (See Lab Appendix for logical steps)
-    (void)message; (void)commit_id_out;
-    return -1;
+    ObjectID tree_id;
+
+    // 1. Build tree from index
+    if (tree_from_index(&tree_id) != 0)
+        return -1;
+
+    // 2. Get parent commit (if exists)
+    ObjectID parent_id;
+    int has_parent = (head_read(&parent_id) == 0);
+
+    // 3. Prepare commit struct
+    Commit commit;
+    memset(&commit, 0, sizeof(Commit));
+
+    commit.tree = tree_id;
+
+    if (has_parent) {
+        commit.parent = parent_id;
+        commit.has_parent = 1;
+    } else {
+        commit.has_parent = 0;
+    }
+
+    // ⚠️ IMPORTANT: cannot assign arrays directly
+    strcpy(commit.author, pes_author());
+    strcpy(commit.message, message);
+
+    commit.timestamp = time(NULL);
+
+    // 4. Serialize commit → dynamically allocated buffer
+    void *data = NULL;
+    size_t len = 0;
+
+    if (commit_serialize(&commit, &data, &len) != 0)
+        return -1;
+
+    // 5. Write commit object
+    if (object_write(OBJ_COMMIT, data, len, commit_id_out) != 0) {
+        free(data);
+        return -1;
+    }
+
+    // free serialized buffer
+    free(data);
+
+    // 6. Update HEAD (creates refs/heads/main)
+    if (head_update(commit_id_out) != 0)
+        return -1;
+
+    return 0;
 }
